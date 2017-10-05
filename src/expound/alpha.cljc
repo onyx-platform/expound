@@ -138,10 +138,10 @@
     value))
 
 (defn preds [problems]
-  (string/join "\n\nor\n\n" (map (fn [problem]
-                                   (printer/indent
-                                    (pr-pred (:pred problem)
-                                             (:spec problem)))) problems)))
+  (map (fn [problem]
+         (pr-pred (:pred problem)
+                  (:spec problem)))
+       problems))
 
 (defn insufficient-input [spec-name val path problem]
   (printer/format
@@ -249,19 +249,7 @@ should have additional elements. The next element is named `%s` and satisfies
 (defmulti problem-group-str (fn [type spec-name _val _path _problems] type))
 
 (defmethod problem-group-str :problem/missing-key [_type spec-name val path problems]
-  (assert (apply = (map :val problems)) (str "All values should be the same, but they are " problems))
-  (printer/format
-   "%s
-
-%s
-
-should contain keys: %s
-
-%s"
-   (header-label "Spec failed")
-   (show-spec-name spec-name (printer/indent (*value-str-fn* spec-name val path (problems/value-in val path))))
-   (string/join "," (map #(str "`" (missing-key (:pred %)) "`") problems))
-   (relevant-specs problems)))
+  {:missing-keys (map #(missing-key (:pred %)) problems)})
 
 (defmethod problem-group-str :problem/not-in-set [_type spec-name val path problems]
   (assert (apply = (map :val problems)) (str "All values should be the same, but they are " problems))
@@ -307,21 +295,8 @@ should be%s: %s
      (relevant-specs problems))))
 
 (defmethod problem-group-str :problem/unknown [_type spec-name val path problems]
-  (assert (apply = (map :val problems)) (str "All values should be the same, but they are " problems))
-  (printer/format
-   "%s
-
-%s
-
-should satisfy
-
-%s
-
-%s"
-   (header-label "Spec failed")
-   (show-spec-name spec-name (printer/indent (*value-str-fn* spec-name val path (problems/value-in val path))))
-   (preds problems)
-   (relevant-specs problems)))
+  {:failed-spec (preds problems)
+   :key (last path)})
 
 (defn problem-type [problem]
   (cond
@@ -364,69 +339,20 @@ should satisfy
     (-> ed ::s/problems first :path first)
     nil))
 
-(defn printer-str [opts explain-data]
-  (if-not explain-data
-    "Success!\n"
-    (binding [*value-str-fn* (get opts :value-str-fn (partial value-in-context
-                                                              (merge {:show-valid-values? false}
-                                                                     opts)))]
-      (let [{:keys [::s/problems ::s/fn ::s/failure]} explain-data
-            _ (doseq [problem problems]
-                (s/assert (s/nilable #{"Insufficient input" "Extra input" "no method"}) (:reason problem)))
-            explain-data' (problems/annotate explain-data) caller (:expound/caller explain-data')
-            form (:expound/form explain-data')
+(defn expound-structure [explain-data]
+  (let [explain-data' (problems/annotate explain-data)
+        caller (:expound/caller explain-data')
+        form (:expound/form explain-data')
+        grouped-problems (->> explain-data'
+                              :expound/problems
+                              (problems/leaf-only)
+                              (group-by (juxt :expound/in problem-type))
+                              (safe-sort-by first paths/compare-paths))]
+    (for [[[in type] problems] grouped-problems]
+      (problem-group-str type (spec-name explain-data) form in problems))))
 
-            grouped-problems (->> explain-data'
-                                  :expound/problems
-                                  (problems/leaf-only)
-                                  (group-by (juxt :expound/in problem-type))
-                                  ;; We attempt to sort the problems by path, but it's not feasible to sort in
-                                  ;; all cases, since paths could contain arbitrary user-defined data structures.
-                                  ;; If there is an error, we just give up on sorting.
-                                  (safe-sort-by first paths/compare-paths))]
+(s/def :a/x (fn [x] (number? x)))
 
-        (printer/no-trailing-whitespace
-         (str
-          (instrumentation-info failure caller)
-          (printer/format
-           "%s
+(s/def :b/x string?)
 
-%s
-Detected %s %s\n"
-           (string/join "\n\n" (for [[[in type] problems] grouped-problems]
-                                 (problem-group-str type (spec-name explain-data) form in problems)))
-           (section-label)
-           (count grouped-problems)
-           (if (= 1 (count grouped-problems)) "error" "errors"))))))))
-
-;;;;;; public ;;;;;;
-
-(defn custom-printer
-  "Returns a printer, configured via opts"
-  [opts]
-  (fn [explain-data]
-    (print (printer-str opts explain-data))))
-
-(defn printer
-  "Prints explain-data in a human-readable format"
-  [explain-data]
-  ((custom-printer {}) explain-data))
-
-(defn expound-str
-  "Given a spec and a value, either returns success message or returns a human-readable explanation as a string."
-  [spec form]
-  ;; expound was initially released with support
-  ;; for CLJS 1.9.542 which did not include
-  ;; the value in the explain data, so we patch it
-  ;; in to avoid breaking back compat (at least for now)
-  (let [explain-data (s/explain-data spec form)]
-    (printer-str {}
-                 (if explain-data
-                   (assoc explain-data
-                          ::s/value form)
-                   nil))))
-
-(defn expound
-  "Given a spec and a value, either prints a success message or prints a human-readable explanation as a string."
-  [spec form]
-  (print (expound-str spec form)))
+(expound-structure (s/explain-data (s/keys :req [:a/x :b/x]) {:a/x "a"}))
