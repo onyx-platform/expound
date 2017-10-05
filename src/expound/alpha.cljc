@@ -249,53 +249,58 @@ should have additional elements. The next element is named `%s` and satisfies
 (defmulti problem-group-str (fn [type spec-name _val _path _problems] type))
 
 (defmethod problem-group-str :problem/missing-key [_type spec-name val path problems]
-  {:missing-keys (map #(missing-key (:pred %)) problems)})
+  (map
+   (fn [problem]
+     {:kind :missing-key
+      :key (missing-key (:pred problem))})
+   problems))
 
-(defmethod problem-group-str :problem/not-in-set [_type spec-name val path problems]
-  (assert (apply = (map :val problems)) (str "All values should be the same, but they are " problems))
-  (printer/format
-   "%s
+;; (defmethod problem-group-str :problem/not-in-set [_type spec-name val path problems]
+;;   (assert (apply = (map :val problems)) (str "All values should be the same, but they are " problems))
+;;   (printer/format
+;;    "%s
 
-%s
+;; %s
 
-should be%s: %s
+;; should be%s: %s
 
-%s"
-   (header-label "Spec failed")
-   (show-spec-name spec-name (printer/indent (*value-str-fn* spec-name val path (problems/value-in val path))))
-   (if (= 1 (count (:pred (first problems)))) "" " one of")
-   (string/join "," (map #(str "`" % "`") (:pred (first problems))))
-   (relevant-specs problems)))
+;; %s"
+;;    (header-label "Spec failed")
+;;    (show-spec-name spec-name (printer/indent (*value-str-fn* spec-name val path (problems/value-in val path))))
+;;    (if (= 1 (count (:pred (first problems)))) "" " one of")
+;;    (string/join "," (map #(str "`" % "`") (:pred (first problems))))
+;;    (relevant-specs problems)))
 
-(defmethod problem-group-str :problem/missing-spec [_type spec-name val path problems]
-  (s/assert ::singleton problems)
-  (printer/format
-   "%s
+;; (defmethod problem-group-str :problem/missing-spec [_type spec-name val path problems]
+;;   (s/assert ::singleton problems)
+;;   (printer/format
+;;    "%s
 
-%s
+;; %s
 
-%s"
-   (header-label "Missing spec")
-   (no-method spec-name val path (first problems))
-   (relevant-specs problems)))
+;; %s"
+;;    (header-label "Missing spec")
+;;    (no-method spec-name val path (first problems))
+;;    (relevant-specs problems)))
 
-(defmethod problem-group-str :problem/regex-failure [_type spec-name val path problems]
-  (s/assert ::singleton problems)
-  (let [problem (first problems)]
-    (printer/format
-     "%s
+;; (defmethod problem-group-str :problem/regex-failure [_type spec-name val path problems]
+;;   (s/assert ::singleton problems)
+;;   (let [problem (first problems)]
+;;     (printer/format
+;;      "%s
 
-%s
+;; %s
 
-%s"
-     (header-label "Syntax error")
-     (case (:reason problem)
-       "Insufficient input" (insufficient-input spec-name val path problem)
-       "Extra input" (extra-input spec-name val path))
-     (relevant-specs problems))))
+;; %s"
+;;      (header-label "Syntax error")
+;;      (case (:reason problem)
+;;        "Insufficient input" (insufficient-input spec-name val path problem)
+;;        "Extra input" (extra-input spec-name val path))
+;;      (relevant-specs problems))))
 
 (defmethod problem-group-str :problem/unknown [_type spec-name val path problems]
-  {:failed-spec (preds problems)
+  {:kind :failed-spec
+   :spec (preds problems)
    :key (last path)})
 
 (defn problem-type [problem]
@@ -348,11 +353,13 @@ should be%s: %s
                               (problems/leaf-only)
                               (group-by (juxt :expound/in problem-type))
                               (safe-sort-by first paths/compare-paths))]
-    (for [[[in type] problems] grouped-problems]
-      (problem-group-str type (spec-name explain-data) form in problems))))
+    (reduce into []
+            (for [[[in type] problems] grouped-problems]
+              (problem-group-str type (spec-name explain-data) form in problems)))))
 
-(s/def :a/x (fn [x] (number? x)))
+(comment
+  (s/def :a/x (fn [x] (number? x)))
 
-(s/def :b/x string?)
+  (s/def :b/x string?)
 
-(expound-structure (s/explain-data (s/keys :req [:a/x :b/x]) {:a/x "a"}))
+  (expound-structure (s/explain-data (s/keys :req [:a/x :b/x]) {})))
