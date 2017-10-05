@@ -299,9 +299,9 @@ should have additional elements. The next element is named `%s` and satisfies
 ;;      (relevant-specs problems))))
 
 (defmethod problem-group-str :problem/unknown [_type spec-name val path problems]
-  {:kind :failed-spec
-   :spec (preds problems)
-   :key (last path)})
+  [{:kind :failed-spec
+    :spec (preds problems)
+    :key (last path)}])
 
 (defn problem-type [problem]
   (cond
@@ -362,4 +362,4 @@ should have additional elements. The next element is named `%s` and satisfies
 
   (s/def :b/x string?)
 
-  (expound-structure (s/explain-data (s/keys :req [:a/x :b/x]) {})))
+  (expound-structure (s/explain-data (s/keys :req [:a/x :b/x]) {:b/x "foo" :a/x "bar"})))
