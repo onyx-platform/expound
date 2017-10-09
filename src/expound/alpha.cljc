@@ -271,17 +271,10 @@ should have additional elements. The next element is named `%s` and satisfies
 ;;    (string/join "," (map #(str "`" % "`") (:pred (first problems))))
 ;;    (relevant-specs problems)))
 
-;; (defmethod problem-group-str :problem/missing-spec [_type spec-name val path problems]
-;;   (s/assert ::singleton problems)
-;;   (printer/format
-;;    "%s
-
-;; %s
-
-;; %s"
-;;    (header-label "Missing spec")
-;;    (no-method spec-name val path (first problems))
-;;    (relevant-specs problems)))
+(defmethod problem-group-str :problem/missing-spec [_type spec-name val path problems]
+  [{:kind :missing-spec
+    :spec (no-method spec-name val path (first problems))
+    :val val}])
 
 ;; (defmethod problem-group-str :problem/regex-failure [_type spec-name val path problems]
 ;;   (s/assert ::singleton problems)
@@ -362,4 +355,16 @@ should have additional elements. The next element is named `%s` and satisfies
 
   (s/def :b/x string?)
 
-  (expound-structure (s/explain-data (s/keys :req [:a/x :b/x]) {:b/x "foo" :a/x "bar"})))
+  (defmulti event-type :event/type)
+
+  (defmethod event-type :event/search [_]
+    (s/keys :req [:event/type :event/timestamp :search/url]))
+
+  (defmethod event-type :event/error [_]
+    (s/keys :req [:event/type :event/timestamp :error/message :error/code]))
+
+  (s/def :event/event (s/multi-spec event-type :event/type))
+
+  (expound-structure (s/explain-data :event/event {:event/type :foo}))
+
+  )
